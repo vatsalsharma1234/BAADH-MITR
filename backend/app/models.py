@@ -1,0 +1,110 @@
+import enum
+import uuid
+from datetime import datetime
+
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+)
+from sqlalchemy.orm import relationship
+
+from app.database import Base
+
+
+def _uid() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+class Severity(str, enum.Enum):
+    watch = "watch"
+    moderate = "moderate"
+    severe = "severe"
+    extreme = "extreme"
+
+
+class ElevationBand(str, enum.Enum):
+    high_ground = "high_ground"
+    mid_slope = "mid_slope"
+    low_lying = "low_lying"
+    riverbank = "riverbank"
+
+
+class District(Base):
+    __tablename__ = "districts"
+
+    id = Column(String, primary_key=True, default=_uid)
+    name = Column(String, nullable=False)
+    river = Column(String, nullable=False)
+    state = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    households = relationship(
+        "Household", back_populates="district", cascade="all, delete-orphan"
+    )
+    alerts = relationship(
+        "Alert", back_populates="district", cascade="all, delete-orphan"
+    )
+
+
+class Household(Base):
+    __tablename__ = "households"
+
+    id = Column(String, primary_key=True, default=_uid)
+    district_id = Column(String, ForeignKey("districts.id"), nullable=False)
+
+    head_name = Column(String, nullable=False)
+    landmark_chain = Column(String, nullable=False)
+    elevation_band = Column(Enum(ElevationBand), default=ElevationBand.mid_slope)
+
+    elderly_only = Column(Boolean, default=False)
+    has_smartphone = Column(Boolean, default=True)
+    mobility_limited = Column(Boolean, default=False)
+    resident_count = Column(Integer, default=1)
+
+    notes = Column(String, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    district = relationship("District", back_populates="households")
+
+
+class Alert(Base):
+    __tablename__ = "alerts"
+
+    id = Column(String, primary_key=True, default=_uid)
+    district_id = Column(String, ForeignKey("districts.id"), nullable=False)
+
+    severity = Column(Enum(Severity), nullable=False)
+    river_level_m = Column(Float, nullable=False)
+    forecast_note = Column(String, nullable=False)
+    issued_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    source = Column(String, default="simulated_flood_feed")
+
+    district = relationship("District", back_populates="alerts")
+    checklist_items = relationship(
+        "ChecklistItem", back_populates="alert", cascade="all, delete-orphan"
+    )
+
+
+class ChecklistItem(Base):
+    __tablename__ = "checklist_items"
+
+    id = Column(String, primary_key=True, default=_uid)
+    alert_id = Column(String, ForeignKey("alerts.id"), nullable=False)
+    household_id = Column(String, ForeignKey("households.id"), nullable=False)
+
+    rank = Column(Integer, nullable=False)
+    priority_score = Column(Float, nullable=False)
+    reason = Column(String, nullable=False)
+
+    status = Column(String, default="pending")
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+    alert = relationship("Alert", back_populates="checklist_items")
+    household = relationship("Household")
